@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BlockBonk — Survive the Night</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<style>
+  @font-face { font-family: 'PixelFallback'; src: local('Courier New'); }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  html, body { width: 100%; height: 100%; background: #0b0e14; overflow: hidden; }
+  body { font-family: 'Press Start 2P', 'PixelFallback', monospace; color: #e8e8e8; }
+  #game-container { position: absolute; inset: 0; }
+  #game-container canvas { display: block; }
+
+  /* ---------- overlay UI ---------- */
+  #ui { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  .panel {
+    background: rgba(18, 22, 30, 0.92);
+    border: 3px solid #3a3f4c;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px #11141a, 0 8px 30px rgba(0,0,0,.6);
+  }
+
+  /* HUD top-left: bars */
+  #hud-bars { position: absolute; top: 12px; left: 12px; width: 240px; }
+  .bar-wrap { position: relative; height: 18px; margin-bottom: 6px; background: #11141a; border: 2px solid #3a3f4c; border-radius: 4px; overflow: hidden; }
+  .bar-fill { position: absolute; inset: 0; transform-origin: left; transition: transform .15s ease-out; }
+  #hp-fill  { background: linear-gradient(#ff6b5e, #c92e1f); }
+  #xp-fill  { background: linear-gradient(#7ef76a, #2ba51f); }
+  .bar-text { position: absolute; inset: 0; text-align: center; font-size: 9px; line-height: 16px; text-shadow: 1px 1px 0 #000; z-index: 2; }
+  #level-tag { font-size: 10px; text-shadow: 1px 1px 0 #000; margin-bottom: 4px; }
+
+  /* HUD top-center: day clock */
+  #hud-clock { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); text-align: center; padding: 8px 18px; }
+  #clock-day { font-size: 12px; color: #ffd95e; }
+  #clock-time { font-size: 10px; margin-top: 6px; color: #aab4c8; }
+
+  /* HUD top-right: resources */
+  #hud-res { position: absolute; top: 12px; right: 12px; padding: 8px 10px; font-size: 10px; line-height: 20px; }
+  #hud-res .res { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #000; border-radius: 2px; }
+
+  /* Bottom bar: weapons + hotbar — wraps into rows on narrow windows */
+  #hud-bottom { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px 18px; align-items: flex-end; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 20px); }
+  #weapon-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+  .wslot { width: 40px; height: 40px; background: rgba(18,22,30,.9); border: 2px solid #3a3f4c; border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .wslot .lvl { position: absolute; bottom: 1px; right: 3px; font-size: 8px; color: #ffd95e; text-shadow: 1px 1px 0 #000; }
+  #hotbar { display: flex; gap: 6px; pointer-events: auto; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+  @media (max-width: 1100px) {
+    .hslot { width: 36px; height: 36px; font-size: 14px; }
+    .wslot { width: 32px; height: 32px; font-size: 14px; }
+    #hint { display: none; }
+  }
+  .hslot { width: 42px; height: 42px; background: rgba(18,22,30,.9); border: 2px solid #3a3f4c; border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+  .hslot:hover { border-color: #8fa3c8; }
+  .hslot.selected { border-color: #ffd95e; box-shadow: 0 0 8px rgba(255,217,94,.5); }
+  .hslot.empty { opacity: .35; cursor: default; }
+  .hslot .cnt { position: absolute; bottom: 1px; right: 3px; font-size: 9px; color: #fff; text-shadow: 1px 1px 0 #000; }
+  .hslot .key { position: absolute; top: 1px; left: 3px; font-size: 8px; color: #8fa3c8; }
+  .hslot.potion { border-color: #6a4a9c; }
+  .hslot.potion:hover { border-color: #b08ae8; }
+
+  /* minimap */
+  #minimap { position: absolute; top: 218px; right: 12px; width: 180px; image-rendering: pixelated; border: 3px solid #3a3f4c; border-radius: 4px; box-shadow: 0 0 0 2px #11141a; background: #0b0e14; opacity: 0.92; }
+
+  /* active buffs */
+  #buffs { position: absolute; bottom: 64px; right: 16px; font-size: 10px; text-align: right; line-height: 20px; text-shadow: 1px 1px 0 #000; }
+
+  /* pet party */
+  #party { margin-top: 8px; display: flex; gap: 6px; pointer-events: auto; cursor: pointer; flex-wrap: wrap; max-width: 320px; }
+  .pet-chip { background: rgba(18,22,30,.9); border: 2px solid #5a4a7c; border-radius: 4px; padding: 4px 7px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+  .pet-chip b { font-size: 8px; color: #ffd95e; }
+  .pet-chip.fainted { opacity: .55; border-color: #3a3f4c; }
+  .php { display: inline-block; width: 26px; height: 5px; background: #11141a; border-radius: 2px; overflow: hidden; }
+  .php span { display: block; height: 100%; background: linear-gradient(#7ef76a, #2ba51f); }
+
+  /* activity log */
+  #activity-log { position: absolute; left: 12px; bottom: 64px; width: 270px; max-height: 190px; overflow: hidden; font-size: 8px; line-height: 14px; pointer-events: none; display: flex; flex-direction: column-reverse; }
+  #activity-log .le { background: rgba(14, 18, 26, 0.72); border-left: 3px solid #3a5f8c; border-radius: 3px; padding: 3px 7px; margin-top: 3px; color: #cdd6e4; text-shadow: 1px 1px 0 #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #activity-log .le .lt { color: #768098; margin-right: 5px; }
+  #activity-log .le.gold { border-left-color: #b08a2e; }
+
+  /* settings */
+  .set-row { display: flex; justify-content: space-between; align-items: center; font-size: 10px; padding: 9px 4px; border-bottom: 1px solid #2a2f3c; }
+  .set-row input[type=range] { width: 180px; accent-color: #ffd95e; }
+  .switch input { transform: scale(1.4); accent-color: #2ba51f; margin-right: 6px; }
+  .switch { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #8fa3c8; }
+  .set-btn { font-family: inherit; font-size: 9px; padding: 10px 12px; background: #2ba51f; color: #fff; border: 2px solid #11141a; border-radius: 4px; cursor: pointer; }
+  .set-btn:hover { background: #36c926; }
+
+  /* sleep fade */
+  #sleep-fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.9s ease; z-index: 40; }
+
+  /* hint line */
+  #hint { position: absolute; bottom: 116px; left: 50%; transform: translateX(-50%); font-size: 9px; color: #aab4c8; text-shadow: 1px 1px 0 #000; text-align: center; line-height: 16px; width: 90vw; }
+
+  /* big banner announcements */
+  #banner { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); font-size: 22px; color: #ffd95e; text-shadow: 2px 2px 0 #000, 0 0 18px rgba(255,80,40,.6); opacity: 0; transition: opacity .4s; text-align: center; line-height: 34px; }
+
+  /* ---------- modals ---------- */
+  .modal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,8,12,.6); pointer-events: auto; }
+  .modal.open { display: flex; }
+  .modal-box { padding: 24px; max-width: 720px; max-height: 84vh; overflow-y: auto; }
+  .modal h2 { font-size: 16px; color: #ffd95e; text-align: center; margin-bottom: 14px; text-shadow: 2px 2px 0 #000; }
+  .modal h3 { font-size: 10px; color: #8fa3c8; margin: 14px 0 8px; }
+
+  /* level up cards */
+  #levelup-cards { display: flex; gap: 14px; justify-content: center; }
+  .card { width: 180px; padding: 16px 12px; background: #1a2030; border: 3px solid #3a3f4c; border-radius: 6px; cursor: pointer; text-align: center; transition: transform .08s, border-color .08s; }
+  .card:hover { transform: translateY(-4px); border-color: #ffd95e; }
+  .card .icon { font-size: 30px; margin-bottom: 10px; }
+  .card .name { font-size: 10px; color: #fff; margin-bottom: 8px; line-height: 14px; }
+  .card .tag { font-size: 8px; color: #ffd95e; margin-bottom: 8px; }
+  .card .desc { font-size: 8px; color: #aab4c8; line-height: 13px; }
+
+  /* crafting */
+  #craft-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .recipe { display: flex; align-items: center; gap: 10px; background: #1a2030; border: 2px solid #3a3f4c; border-radius: 4px; padding: 8px 10px; }
+  .recipe .icon { font-size: 22px; width: 30px; text-align: center; }
+  .recipe .info { flex: 1; }
+  .recipe .rname { font-size: 9px; color: #fff; margin-bottom: 5px; }
+  .recipe .rdesc { font-size: 7px; color: #8fa3c8; line-height: 11px; margin-bottom: 5px; }
+  .recipe .cost { font-size: 8px; }
+  .cost .ok { color: #7ef76a; } .cost .no { color: #ff6b5e; }
+  .recipe button { font-family: inherit; font-size: 8px; padding: 7px 10px; background: #2ba51f; color: #fff; border: 2px solid #11141a; border-radius: 4px; cursor: pointer; }
+  .craft-btns { display: flex; flex-direction: column; gap: 3px; }
+  .craft-btns .qty { font-size: 7px; padding: 4px 6px; background: #3a5f8c; }
+  .craft-btns .qty:not(:disabled):hover { background: #4a78ae; }
+  .recipe button:disabled { background: #3a3f4c; color: #767f92; cursor: default; }
+  .recipe button:not(:disabled):hover { background: #36c926; }
+  .recipe.crafted button { background: #3a3f4c; }
+
+  .modal .close-hint { text-align: center; font-size: 8px; color: #8fa3c8; margin-top: 14px; }
+
+  /* game over / pause */
+  .center-box { text-align: center; padding: 30px 40px; }
+  .center-box .big { font-size: 20px; color: #ff6b5e; margin-bottom: 16px; text-shadow: 2px 2px 0 #000; }
+  .center-box .stats { font-size: 10px; line-height: 20px; color: #aab4c8; margin-bottom: 18px; }
+  .center-box button { font-family: inherit; font-size: 11px; padding: 12px 22px; margin: 4px; background: #2ba51f; color: #fff; border: 3px solid #11141a; border-radius: 6px; cursor: pointer; }
+  .center-box button:hover { background: #36c926; }
+  .center-box button.alt { background: #3a3f4c; }
+  .center-box button.alt:hover { background: #4a5163; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="game-container"></div>
+
+<div id="ui">
+  <div id="hud-bars">
+    <div id="level-tag">LV 1</div>
+    <div class="bar-wrap"><div id="hp-fill" class="bar-fill"></div><div id="hp-text" class="bar-text">100/100</div></div>
+    <div class="bar-wrap" style="height:12px"><div id="xp-fill" class="bar-fill"></div></div>
+    <div id="party"></div>
+  </div>
+
+  <div id="hud-clock" class="panel">
+    <div id="clock-day">DAY 1</div>
+    <div id="clock-time">☀ 1:30</div>
+  </div>
+
+  <div id="hud-res" class="panel">
+    <div class="res"><span id="res-wood">0</span><span class="swatch" style="background:#8a5a2b"></span></div>
+    <div class="res"><span id="res-stone">0</span><span class="swatch" style="background:#8d8d94"></span></div>
+    <div class="res"><span id="res-iron">0</span><span class="swatch" style="background:#d8c8b8"></span></div>
+    <div class="res"><span id="res-gold">0</span><span class="swatch" style="background:#f5c842"></span></div>
+    <div class="res"><span id="res-diamond">0</span><span class="swatch" style="background:#4ee0d8"></span></div>
+    <div class="res" style="color:#ffd95e"><span id="res-coins">0</span><span class="swatch" style="background:#ffd95e;border-radius:50%"></span></div>
+    <div class="res" id="skill-line" style="color:#8fa3c8;font-size:9px">⛏ 1 · 🎣 1</div>
+  </div>
+
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="activity-log"></div>
+  <div id="hint">WASD move · walk into trees/rocks to mine · [C] craft · [1-8] place · [9/0] potions · survive the night!</div>
+  <div id="buffs"></div>
+  <div id="sleep-fade"></div>
+
+  <div id="hud-bottom">
+    <div id="weapon-list"></div>
+    <div id="hotbar"></div>
+  </div>
+
+  <div id="banner"></div>
+
+  <!-- Level up -->
+  <div id="modal-levelup" class="modal">
+    <div class="modal-box panel">
+      <h2>LEVEL UP!</h2>
+      <div id="levelup-cards"></div>
+    </div>
+  </div>
+
+  <!-- Crafting -->
+  <div id="modal-craft" class="modal">
+    <div class="modal-box panel" style="width:700px">
+      <h2>⛏ CRAFTING</h2>
+      <div id="craft-list"></div>
+      <div class="close-hint">[C] or [ESC] to close · crafted turrets &amp; walls go to your hotbar</div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="modal-pause" class="modal">
+    <div class="center-box panel">
+      <div class="big" style="color:#ffd95e">PAUSED</div>
+      <div class="stats">
+        WASD / arrows — move<br>
+        C — crafting menu<br>
+        1-8 — select structure · click to place<br>
+        9 / 0 — drink potions &nbsp; E — sleep in bed<br>
+        G — capture a blueprint of your fort<br>
+        N — toggle minimap<br>
+        right-click / ESC — cancel placement<br>
+        M — mute &nbsp; ESC — pause<br><br>
+        <span style="color:#7ef76a">autosaves every dawn</span>
+      </div>
+      <button onclick="gameScene.togglePause()">RESUME</button>
+      <button class="alt" onclick="openSettings(gameScene)">⚙ SETTINGS</button>
+      <button class="alt" onclick="gameScene.saveNow()">SAVE</button>
+      <button class="alt" style="background:#8a6d1e" onclick="gameScene.tryPrestige()">✨ ASCEND</button>
+      <button class="alt" onclick="gameScene.newWorld()">NEW WORLD</button>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="modal-gameover" class="modal">
+    <div class="center-box panel">
+      <div class="big">YOU DIED</div>
+      <div id="go-stats" class="stats"></div>
+      <button id="go-continue" onclick="gameScene.continueFromSave()">⛏ WAKE AT DAWN</button>
+      <button class="alt" onclick="gameScene.newWorld()">NEW WORLD</button>
+    </div>
+  </div>
+
+  <!-- Critter party & box -->
+  <div id="modal-box" class="modal">
+    <div class="modal-box panel" style="width:600px">
+      <h2>🎒 CRITTER PARTY &amp; BOX</h2>
+      <h3>PARTY — ⭐ guard stays close · others roam by day, all fight at night</h3>
+      <div id="party-list"></div>
+      <h3 id="box-head">IN THE BOX</h3>
+      <div id="box-list"></div>
+      <div class="close-hint">[B] or [ESC] to close · boxed critters rest up to full health</div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="modal-settings" class="modal">
+    <div class="modal-box panel" style="width:460px">
+      <h2>⚙ SETTINGS</h2>
+      <div class="set-row"><span>🔊 Volume</span><input id="set-volume" type="range" min="0" max="100" step="5"></div>
+      <div class="set-row"><span>🔈 Sound</span><label class="switch"><input id="set-sound" type="checkbox"><span>ON</span></label></div>
+      <div class="set-row"><span>📳 Screen shake</span><label class="switch"><input id="set-shake" type="checkbox"><span>ON</span></label></div>
+      <div class="set-row"><span>💬 Floating text</span><label class="switch"><input id="set-float" type="checkbox"><span>ON</span></label></div>
+      <div class="set-row"><span>🗺 Minimap</span><label class="switch"><input id="set-minimap" type="checkbox"><span>ON</span></label></div>
+      <div class="set-row"><span>📜 Activity log</span><label class="switch"><input id="set-log" type="checkbox"><span>ON</span></label></div>
+      <h3>SAVE DATA <span id="set-saveinfo" style="color:#7ef76a"></span></h3>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center">
+        <button class="set-btn" onclick="gameScene.manualSave()">💾 SAVE NOW</button>
+        <button class="set-btn" onclick="exportSave(gameScene)">⬇ EXPORT</button>
+        <button class="set-btn" onclick="document.getElementById('import-file').click()">⬆ IMPORT</button>
+      </div>
+      <input id="import-file" type="file" accept=".json,application/json" style="display:none">
+      <div class="close-hint">autosaves: every dawn · after building/crafting · on tab close — [ESC] to close</div>
+    </div>
+  </div>
+
+  <!-- Continue prompt on load -->
+  <div id="modal-start" class="modal">
+    <div class="center-box panel">
+      <div class="big" style="color:#ffd95e">⛏ BLOCKBONK</div>
+      <div id="start-stats" class="stats"></div>
+      <button id="start-continue" onclick="gameScene.continueFromSave()">CONTINUE</button>
+      <button class="alt" onclick="startNewWorld()">NEW WORLD</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script>
+// load local scripts with a cache-buster so every reload gets fresh code
+(function () {
+  var v = Date.now();
+  var files = ['sfx', 'data', 'textures', 'world', 'weapons', 'enemies', 'turrets',
+               'areas', 'blueprint', 'pets', 'save', 'ui', 'main'];
+  for (var i = 0; i < files.length; i++) {
+    document.write('<scr' + 'ipt src="js/' + files[i] + '.js?v=' + v + '"></scr' + 'ipt>');
+  }
+})();
+</script>
+</body>
+</html>
