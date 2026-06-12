@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BlockBonk 3D — proof of concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #c { width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+  .px { font-family: 'Press Start 2P', monospace; color: #fff; text-shadow: 2px 2px 0 #000; }
+  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+  #topbar { position: absolute; top: 10px; left: 0; right: 0; display: flex; justify-content: center; gap: 18px; align-items: center; }
+  .panel { background: rgba(0,0,0,.45); border: 2px solid rgba(255,255,255,.25); border-radius: 4px; padding: 7px 10px; font-size: 10px; }
+  #hpwrap { position: absolute; top: 10px; left: 10px; }
+  #hpbar { width: 140px; height: 10px; background: #3a0d0d; border: 2px solid #000; margin-top: 5px; }
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(#ff6b5e, #c62828); }
+  #clockwrap { min-width: 150px; text-align: center; }
+  #clockbar { width: 100%; height: 6px; background: rgba(0,0,0,.5); border: 1px solid #000; margin-top: 5px; }
+  #clockfill { height: 100%; width: 0%; background: #ffd54f; }
+  #res { position: absolute; top: 10px; right: 10px; text-align: right; font-size: 10px; line-height: 1.9; }
+  #hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 8px; color: #cfd8dc; line-height: 1.8; }
+  #title { position: absolute; bottom: 12px; left: 12px; font-size: 8px; color: #9e9e9e; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 40px rgba(255,0,0,.9); opacity: 0; }
+  #died { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 22px; background: rgba(0,0,0,.72); pointer-events: all; }
+  #died h1 { font-size: 22px; color: #ff5252; margin: 0; }
+  #died p { font-size: 11px; margin: 0; }
+  #died button { font-family: 'Press Start 2P', monospace; font-size: 12px; padding: 12px 20px; background: #2e7d32; color: #fff; border: 3px solid #1b5e20; cursor: pointer; }
+  #loadfail { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; font-size: 11px; line-height: 2; padding: 20px; }
+</style>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="hpwrap" class="px panel">❤ HP<div id="hpbar"><div id="hpfill"></div></div></div>
+  <div id="topbar">
+    <div id="clockwrap" class="px panel"><span id="daylabel">☀ Day 1</span><div id="clockbar"><div id="clockfill"></div></div></div>
+  </div>
+  <div id="res" class="px panel">🪵 <span id="wood">0</span><br>🪨 <span id="stone">0</span><br>💚 <span id="gems">0</span> &nbsp;💀 <span id="kills">0</span></div>
+  <div id="hint" class="px">WASD / arrows / hold-click to move · walk into trees &amp; rocks to mine<br>your sword swings on its own — survive the night</div>
+  <div id="title" class="px">BlockBonk 3D · proof of concept</div>
+</div>
+<div id="vignette"></div>
+<div id="died" class="px"><h1>YOU DIED</h1><p id="diedmsg"></p><button onclick="location.reload()">⛏ TRY AGAIN</button></div>
+<div id="loadfail" class="px">Couldn't load Babylon.js from the CDN.<br>Check your internet connection and reload.</div>
+<script>
+'use strict';
+if (typeof BABYLON === 'undefined') {
+  document.getElementById('loadfail').style.display = 'flex';
+  throw new Error('Babylon failed to load');
+}
+
+// ---------- constants ----------
+const MAP = 96;                  // demo world is a quarter of the 2D map
+const DAY_LEN = 70, NIGHT_LEN = 45;
+const T = { EMPTY:0, WATER:1, TREE:3, STONE:4, IRON:5, GOLD:6, DIAMOND:7 };
+const BLOCK_HP = { 3:3, 4:5, 5:7, 6:7, 7:9 };
+const V3 = BABYLON.Vector3, C3 = BABYLON.Color3;
+const hex = s => C3.FromHexString(s);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const lerp = (a,b,t) => a + (b-a) * t;
+
+// ---------- tiny sfx (same spirit as the 2D game's sfx.js) ----------
+let AC = null;
+function audio() { if (!AC) try { AC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e) {} return AC; }
+function blip(freq, dur, type, vol) {
+  const ac = audio(); if (!ac || ac.state !== 'running') return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol || 0.05, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+  o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur);
+}
+const SFX = {
+  bonk:  () => blip(140, 0.08, 'square', 0.06),
+  brk:   () => { blip(90, 0.15, 'sawtooth', 0.07); blip(220, 0.08, 'square', 0.04); },
+  hit:   () => blip(330, 0.06, 'square', 0.05),
+  hurt:  () => blip(70, 0.25, 'sawtooth', 0.09),
+  gem:   () => { blip(880, 0.07, 'sine', 0.06); setTimeout(() => blip(1320, 0.1, 'sine', 0.05), 60); },
+  kill:  () => blip(55, 0.3, 'sawtooth', 0.08),
+};
+
+// ---------- engine / scene ----------
+const canvas = document.getElementById('c');
+const engine = new BABYLON.Engine(canvas, true, { stencil: false });
+const scene = new BABYLON.Scene(engine);
+const SKY_DAY = hex('#87ceeb'), SKY_NIGHT = hex('#0a0d20');
+scene.clearColor = BABYLON.Color4.FromColor3(SKY_DAY, 1);
+scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+scene.fogDensity = 0.011;
+scene.fogColor = SKY_DAY.clone();
+
+const camera = new BABYLON.FreeCamera('cam', new V3(MAP/2, 12, MAP/2 + 8), scene);
+scene.activeCamera = camera;
+
+const hemi = new BABYLON.HemisphericLight('hemi', new V3(0, 1, 0), scene);
+hemi.groundColor = hex('#2a2a35');
+const sun = new BABYLON.DirectionalLight('sun', new V3(-0.4, -1, 0.3), scene);
+sun.autoCalcShadowZBounds = true;
+const shadows = new BABYLON.ShadowGenerator(1024, sun);
+shadows.usePoissonSampling = true;
+const lantern = new BABYLON.PointLight('lantern', new V3(0, 1.4, 0), scene);
+lantern.diffuse = hex('#ffb066'); lantern.range = 10; lantern.intensity = 0;
+
+window.addEventListener('resize', () => engine.resize());
+
+// ---------- materials ----------
+function mat(color, emissive) {
+  const m = new BABYLON.StandardMaterial('m', scene);
+  m.diffuseColor = typeof color === 'string' ? hex(color) : color;
+  m.specularColor = C3.Black();
+  if (emissive) m.emissiveColor = hex(emissive);
+  return m;
+}
+const whiteMat = mat('#ffffff'); // thin-instance color buffers do the tinting
+
+// ---------- world generation (ported from js/world.js) ----------
+function makeNoise(cell) {
+  const lat = {};
+  const rnd = (x, y) => { const k = x+','+y; if (!(k in lat)) lat[k] = Math.random(); return lat[k]; };
+  return (x, y) => {
+    const gx = Math.floor(x/cell), gy = Math.floor(y/cell);
+    const fx = x/cell - gx, fy = y/cell - gy;
+    const sx = fx*fx*(3-2*fx), sy = fy*fy*(3-2*fy);
+    const a = rnd(gx,gy), b = rnd(gx+1,gy), c = rnd(gx,gy+1), d = rnd(gx+1,gy+1);
+    return a + (b-a)*sx + (c-a)*sy + (a-b-c+d)*sx*sy;
+  };
+}
+
+const cells = new Uint8Array(MAP * MAP);          // tile type per cell
+const blockHP = {};                                // 'x,z' -> remaining hp
+const instReg = {};                                // 'x,z' -> [{mesh, idx, sx, sy, sz, px, py, pz}]
+const cellAt = (x, z) => (x < 0 || z < 0 || x >= MAP || z >= MAP) ? T.STONE : cells[z*MAP + x];
+const solidAt = (x, z) => { const c = cellAt(x, z); return c === T.WATER || c >= T.TREE; };
+
+function buildWorld() {
+  const water = makeNoise(11), forest = makeNoise(7), rocks = makeNoise(6),
+        dirtN = makeNoise(5), tall = makeNoise(6);
+  const cx = MAP/2, cz = MAP/2;
+
+  // tile floor: one unit quad, thin-instanced per cell with a per-instance color
+  const tile = BABYLON.MeshBuilder.CreateGround('tile', { width: 1, height: 1 }, scene);
+  tile.material = whiteMat;
+  tile.receiveShadows = true;
+  const tileMats = new Float32Array(MAP*MAP*16), tileCols = new Float32Array(MAP*MAP*4);
+
+  // block meshes, thin-instanced per type
+  const protoBox = (w,h,d) => { const b = BABYLON.MeshBuilder.CreateBox('b', { width:w, height:h, depth:d }, scene); b.material = whiteMat; return b; };
+  const trunkMesh = protoBox(0.72, 1.7, 0.72);
+  const leavesMesh = protoBox(1.7, 1.3, 1.7);
+  const rockMesh = protoBox(0.95, 0.95, 0.95);
+  const blockBufs = new Map([[trunkMesh, {m:[],c:[]}], [leavesMesh, {m:[],c:[]}], [rockMesh, {m:[],c:[]}]]);
+
+  function addInst(mesh, x, y, z, sx, sy, sz, col, jitter) {
+    const b = blockBufs.get(mesh), idx = b.m.length / 16;
+    const arr = new Float32Array(16);
+    BABYLON.Matrix.Compose(new V3(sx, sy, sz), BABYLON.Quaternion.Identity(), new V3(x, y, z)).copyToArray(arr, 0);
+    for (const v of arr) b.m.push(v);
+    const j = jitter || 0;
+    b.c.push(col.r + (Math.random()-0.5)*j, col.g + (Math.random()-0.5)*j, col.b + (Math.random()-0.5)*j, 1);
+    return { mesh, idx, sx, sy, sz, px: x, py: y, pz: z };
+  }
+
+  const GRASS = [hex('#4a9e3d'), hex('#418f36')], TALLG = hex('#357f2e'),
+        DIRT = hex('#7a5a36'), SAND = hex('#d8c878'), WATER = hex('#3b6fd4'),
+        TRUNK = hex('#6b4a2a'), LEAVES = hex('#2e7d32'), ROCKC = hex('#8d8d94'),
+        ORE = { [T.IRON]: hex('#c9b8a8'), [T.GOLD]: hex('#e8c14a'), [T.DIAMOND]: hex('#4ee0d8') };
+
+  for (let z = 0; z < MAP; z++) for (let x = 0; x < MAP; x++) {
+    const i = z*MAP + x;
+    const distSpawn = Math.hypot(x - cx, z - cz);
+    const w = water(x, z);
+    let col, type = T.EMPTY;
+
+    if (w < 0.24 && distSpawn > 9) { col = WATER; type = T.WATER; }
+    else if (w < 0.30 && distSpawn > 9) col = SAND;
+    else if (dirtN(x, z) > 0.78) col = DIRT;
+    else col = GRASS[(x + z) % 2];
+
+    // blocks (spawn area kept clear, like the 2D game)
+    if (type === T.EMPTY && col !== SAND && distSpawn >= 7) {
+      const r = rocks(x, z);
+      if (r > 0.72 && Math.random() < 0.75) {
+        type = T.STONE;
+        const depth = (r - 0.72) / 0.28, roll = Math.random();
+        if (depth > 0.55 && roll < 0.06) type = T.DIAMOND;
+        else if (depth > 0.35 && roll < 0.16) type = T.GOLD;
+        else if (roll < 0.34) type = T.IRON;
+      } else if (forest(x, z) > 0.60 && Math.random() < 0.45) {
+        type = T.TREE;
+      } else if (tall(x, z) > 0.64 && distSpawn > 10 && col !== DIRT) {
+        col = TALLG; // walkable critter grass, painted only
+      }
+    }
+
+    cells[i] = type;
+    const px = x + 0.5, pz = z + 0.5;
+    BABYLON.Matrix.Translation(px, type === T.WATER ? -0.06 : 0, pz).copyToArray(tileMats, i*16);
+    const jit = (Math.random()-0.5)*0.045;
+    tileCols[i*4] = col.r + jit; tileCols[i*4+1] = col.g + jit; tileCols[i*4+2] = col.b + jit; tileCols[i*4+3] = 1;
+
+    if (type === T.TREE) {
+      const s = 0.9 + Math.random()*0.25;
+      instReg[x+','+z] = [
+        addInst(trunkMesh, px, 0.85*s, pz, s, s, s, TRUNK, 0.06),
+        addInst(leavesMesh, px, (1.7 + 0.55)*s, pz, s, s, s, LEAVES, 0.1),
+      ];
+      blockHP[x+','+z] = BLOCK_HP[T.TREE];
+    } else if (type >= T.STONE) {
+      const insts = [addInst(rockMesh, px, 0.48, pz, 1, 1, 1, ROCKC, 0.05)];
+      if (type > T.STONE) // ore fleck: a smaller tinted cube poking out
+        insts.push(addInst(rockMesh, px, 0.78, pz, 0.45, 0.45, 0.45, ORE[type], 0));
+      instReg[x+','+z] = insts;
+      blockHP[x+','+z] = BLOCK_HP[type];
+    }
+  }
+
+  tile.thinInstanceSetBuffer('matrix', tileMats, 16, true);
+  tile.thinInstanceSetBuffer('color', tileCols, 4, true);
+  for (const [mesh, b] of blockBufs) {
+    mesh.thinInstanceSetBuffer('matrix', new Float32Array(b.m), 16, false);
+    mesh.thinInstanceSetBuffer('color', new Float32Array(b.c), 4, true);
+    shadows.addShadowCaster(mesh);
+  }
+
+  // dark underlay so the map edge doesn't show the void
+  const under = BABYLON.MeshBuilder.CreateGround('under', { width: 500, height: 500 }, scene);
+  under.position = new V3(MAP/2, -0.12, MAP/2);
+  under.material = mat('#1d3a1a');
+}
+buildWorld();
+
+// damaged / destroyed blocks: rescale their thin instances in place
+const pulses = [];
+function setInstScale(inst, mul) {
+  const m = BABYLON.Matrix.Compose(new V3(inst.sx*mul, inst.sy*mul, inst.sz*mul),
+    BABYLON.Quaternion.Identity(), new V3(inst.px, inst.py, inst.pz));
+  inst.mesh.thinInstanceSetMatrixAt(inst.idx, m, true);
+}
+function damageBlock(x, z, byPlayer) {
+  const k = x+','+z;
+  if (!(k in blockHP)) return false;
+  blockHP[k]--;
+  const type = cellAt(x, z);
+  if (blockHP[k] <= 0) {
+    for (const inst of instReg[k]) setInstScale(inst, 0);
+    delete instReg[k]; delete blockHP[k];
+    cells[z*MAP + x] = T.EMPTY;
+    spawnDebris(x+0.5, 1, z+0.5, type === T.TREE ? hex('#5d3a1e') : hex('#8d8d94'));
+    SFX.brk();
+    if (byPlayer) {
+      if (type === T.TREE) state.wood++; else state.stone++;
+      if (type > T.STONE) { state.gems += 2; SFX.gem(); } // ores pay out a little extra
+      hudDirty = true;
+    }
+  } else {
+    for (const inst of instReg[k]) pulses.push({ inst, t: 0.18 });
+    if (byPlayer) SFX.bonk();
+  }
+  return true;
+}
+
+// ---------- character builders ----------
+function limb(parent, x, y, z, w, h, d, material) {
+  const pivot = new BABYLON.TransformNode('limb', scene);
+  pivot.parent = parent; pivot.position = new V3(x, y, z);
+  const box = BABYLON.MeshBuilder.CreateBox('lb', { width: w, height: h, depth: d }, scene);
+  box.parent = pivot; box.position.y = -h/2; box.material = material;
+  return pivot;
+}
+function buildRig(shirt, skin, pants, scale) {
+  const root = new BABYLON.TransformNode('rig', scene);
+  const mShirt = mat(shirt), mSkin = mat(skin), mPants = mat(pants);
+  const body = BABYLON.MeshBuilder.CreateBox('body', { width: 0.5, height: 0.6, depth: 0.3 }, scene);
+  body.parent = root; body.position.y = 1.05; body.material = mShirt;
+  const head = BABYLON.MeshBuilder.CreateBox('head', { width: 0.46, height: 0.46, depth: 0.46 }, scene);
+  head.parent = root; head.position.y = 1.6; head.material = mSkin;
+  const rig = {
+    root, head, body,
+    armL: limb(root, -0.33, 1.3, 0, 0.16, 0.55, 0.16, mShirt),
+    armR: limb(root,  0.33, 1.3, 0, 0.16, 0.55, 0.16, mShirt),
+    legL: limb(root, -0.13, 0.78, 0, 0.18, 0.55, 0.18, mPants),
+    legR: limb(root,  0.13, 0.78, 0, 0.18, 0.55, 0.18, mPants),
+    mats: [mShirt, mSkin, mPants],
+  };
+  root.scaling = new V3(scale, scale, scale);
+  for (const m of root.getChildMeshes()) shadows.addShadowCaster(m);
+  return rig;
+}
+
+// ---------- player ----------
+const state = {
+  x: MAP/2, z: MAP/2, hp: 100, maxHp: 100,
+  day: 1, phase: 'day', phaseT: 0,
+  wood: 0, stone: 0, gems: 0, kills: 0,
+  dead: false, mineT: 0, atkT: 0, hurtT: 0,
+};
+const player = buildRig('#2e6bd4', '#e8b88a', '#3a3a48', 0.95);
+const hairMat = mat('#4a2f1d');
+const hair = BABYLON.MeshBuilder.CreateBox('hair', { width: 0.48, height: 0.12, depth: 0.48 }, scene);
+hair.parent = player.root; hair.position.y = 1.86; hair.material = hairMat;
+const sword = BABYLON.MeshBuilder.CreateBox('sword', { width: 0.07, height: 0.75, depth: 0.14 }, scene);
+sword.parent = player.armR; sword.position = new V3(0, -0.6, 0.3); sword.rotation.x = Math.PI/2;
+sword.material = mat('#cfd8dc', '#37474f');
+shadows.addShadowCaster(sword);
+
+// ---------- zombies ----------
+const zombies = [];
+function spawnZombie() {
+  if (zombies.length >= 40 || state.dead) return;
+  let x, z, tries = 0;
+  do {
+    const a = Math.random()*Math.PI*2, d = 16 + Math.random()*9;
+    x = Math.floor(state.x + Math.cos(a)*d); z = Math.floor(state.z + Math.sin(a)*d);
+    if (++tries > 30) return;
+  } while (x < 2 || z < 2 || x >= MAP-2 || z >= MAP-2 || solidAt(x, z));
+  const rig = buildRig('#3f9a44', '#6fbf5a', '#2c4a6e', 0.92);
+  rig.armL.rotation.x = rig.armR.rotation.x = -Math.PI/2; // classic zombie reach
+  rig.root.position = new V3(x+0.5, 0, z+0.5);
+  zombies.push({
+    rig, x: x+0.5, z: z+0.5,
+    hp: 40 + (state.day-1)*12, maxHp: 40 + (state.day-1)*12,
+    speed: 1.9 + Math.random()*0.7, atkCd: 0, chewCd: 0, flashT: 0, wob: Math.random()*7,
+  });
+}
+function killZombie(zb, i) {
+  spawnDebris(zb.x, 1, zb.z, hex('#3f9a44'));
+  dropGem(zb.x, zb.z);
+  zb.rig.root.dispose();
+  zombies.splice(i, 1);
+  state.kills++; hudDirty = true;
+  SFX.kill();
+}
+
+// ---------- gems & debris ----------
+const gemMat = mat('#2ee06a', '#0a4a1e');
+const gems = [];
+function dropGem(x, z) {
+  const g = BABYLON.MeshBuilder.CreateBox('gem', { size: 0.26 }, scene);
+  g.material = gemMat; g.rotation.x = Math.PI/4; g.rotation.z = Math.PI/4;
+  g.position = new V3(x, 0.4, z);
+  gems.push({ mesh: g, x, z, t: 0 });
+}
+const debris = [];
+const debrisMat = mat('#ffffff');
+function spawnDebris(x, y, z, color) {
+  for (let i = 0; i < 7; i++) {
+    const d = BABYLON.MeshBuilder.CreateBox('d', { size: 0.12 + Math.random()*0.1 }, scene);
+    d.material = debrisMat.clone('dm'); d.material.diffuseColor = color; d.material.emissiveColor = color.scale(0.3);
+    d.position = new V3(x, y, z);
+    const a = Math.random()*Math.PI*2;
+    debris.push({ mesh: d, vx: Math.cos(a)*2.5, vy: 2.5 + Math.random()*2.5, vz: Math.sin(a)*2.5, life: 0.8 });
+  }
+}
+
+// ---------- movement / collision (grid AABB, like arcade physics) ----------
+const R = 0.32; // body radius in tiles
+function blockedAt(x, z) {
+  return solidAt(Math.floor(x - R), Math.floor(z - R)) || solidAt(Math.floor(x + R), Math.floor(z - R))
+      || solidAt(Math.floor(x - R), Math.floor(z + R)) || solidAt(Math.floor(x + R), Math.floor(z + R));
+}
+// move with axis separation; returns the cell that blocked us (for mining), or null
+function tryMove(o, dx, dz) {
+  let hit = null;
+  let nx = clamp(o.x + dx, 1 + R, MAP - 1 - R);
+  if (!blockedAt(nx, o.z)) o.x = nx;
+  else hit = { x: Math.floor(o.x + Math.sign(dx)*(R + 0.18)), z: Math.floor(o.z) };
+  let nz = clamp(o.z + dz, 1 + R, MAP - 1 - R);
+  if (!blockedAt(o.x, nz)) o.z = nz;
+  else hit = { x: Math.floor(o.x), z: Math.floor(o.z + Math.sign(dz)*(R + 0.18)) };
+  return hit;
+}
+
+// ---------- input ----------
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (audio() && AC.state === 'suspended') AC.resume(); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+let pointerTarget = null;
+function pickGround(ev) {
+  const r = canvas.getBoundingClientRect();
+  const ray = scene.createPickingRay(ev.clientX - r.left, ev.clientY - r.top, BABYLON.Matrix.Identity(), camera);
+  if (Math.abs(ray.direction.y) < 1e-4) return null;
+  const t = -ray.origin.y / ray.direction.y;
+  return t > 0 ? { x: ray.origin.x + ray.direction.x*t, z: ray.origin.z + ray.direction.z*t } : null;
+}
+canvas.addEventListener('pointerdown', ev => { pointerTarget = pickGround(ev); canvas.setPointerCapture(ev.pointerId); if (audio() && AC.state === 'suspended') AC.resume(); });
+canvas.addEventListener('pointermove', ev => { if (pointerTarget) pointerTarget = pickGround(ev); });
+canvas.addEventListener('pointerup', () => { pointerTarget = null; });
+
+// ---------- HUD ----------
+const $ = id => document.getElementById(id);
+let hudDirty = true;
+function updateHUD() {
+  $('hpfill').style.width = clamp(state.hp / state.maxHp * 100, 0, 100) + '%';
+  $('clockfill').style.width = (state.phaseT / (state.phase === 'day' ? DAY_LEN : NIGHT_LEN) * 100) + '%';
+  if (hudDirty) {
+    $('daylabel').textContent = (state.phase === 'day' ? '☀' : '🌙') + ' Day ' + state.day;
+    $('wood').textContent = state.wood; $('stone').textContent = state.stone;
+    $('gems').textContent = state.gems; $('kills').textContent = state.kills;
+    hudDirty = false;
+  }
+}
+
+// ---------- day / night ----------
+let spawnT = 0;
+function updateCycle(dt) {
+  state.phaseT += dt;
+  if (state.phase === 'day' && state.phaseT >= DAY_LEN) {
+    state.phase = 'night'; state.phaseT = 0; spawnT = 1.5; hudDirty = true;
+  } else if (state.phase === 'night' && state.phaseT >= NIGHT_LEN) {
+    state.phase = 'day'; state.phaseT = 0; state.day++; hudDirty = true;
+    for (let i = zombies.length - 1; i >= 0; i--) killZombie(zombies[i], i); // dawn burns them away
+    state.kills -= 0; // gems from dawn burns still count — generous, it's a demo
+  }
+  if (state.phase === 'night' && !state.dead) {
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      spawnT = Math.max(0.8, 2.6 - state.day*0.25);
+      const batch = 1 + Math.floor(state.day / 2);
+      for (let i = 0; i < batch; i++) spawnZombie();
+    }
+  }
+  // lighting: L is daylight 0..1 with sunrise / sunset ramps
+  let L = 0;
+  if (state.phase === 'day') {
+    const p = state.phaseT / DAY_LEN;
+    L = clamp(Math.min(p / 0.08, (1 - p) / 0.12), 0, 1);
+  }
+  const sky = C3.Lerp(SKY_NIGHT, SKY_DAY, L);
+  scene.clearColor = BABYLON.Color4.FromColor3(sky, 1);
+  scene.fogColor = sky;
+  sun.intensity = lerp(0.24, 1.0, L);
+  sun.diffuse = C3.Lerp(hex('#7080ff'), hex('#fff8e0'), L);
+  hemi.intensity = lerp(0.32, 0.55, L);
+  hemi.diffuse = C3.Lerp(hex('#5560a8'), hex('#ffffff'), L);
+  lantern.intensity = (1 - L) * 0.8; // the player's glow comes out at night, like the 2D game
+  lantern.position.set(state.x, 1.4, state.z);
+  if (state.phase === 'day') {
+    const p = state.phaseT / DAY_LEN;
+    sun.direction = new V3(Math.cos(Math.PI*p)*0.8, -(0.3 + 0.7*Math.sin(Math.PI*p)), 0.3).normalize();
+  } else {
+    sun.direction = new V3(0.3, -1, 0.25).normalize();
+  }
+}
+
+// ---------- combat ----------
+function playerAttack(dt) {
+  state.atkT -= dt;
+  if (state.atkT > 0 || state.dead) return;
+  let best = null, bestD = 2.4;
+  for (const zb of zombies) {
+    const d = Math.hypot(zb.x - state.x, zb.z - state.z);
+    if (d < bestD) { bestD = d; best = zb; }
+  }
+  if (!best) return;
+  state.atkT = 0.55; state.swingT = 0.22;
+  player.root.rotation.y = Math.atan2(best.x - state.x, best.z - state.z);
+  best.hp -= 25; best.flashT = 0.12;
+  for (const m of best.rig.root.getChildMeshes()) {
+    if (!m._fm) { m._fm = true; m.material = m.material.clone('f'); }
+    m.material.emissiveColor = hex('#992222');
+  }
+  // knockback, respecting walls
+  const kb = 1.1 / Math.max(bestD, 0.1);
+  tryMove(best, (best.x - state.x)*kb, (best.z - state.z)*kb);
+  SFX.hit();
+  if (best.hp <= 0) killZombie(best, zombies.indexOf(best));
+}
+
+function updateZombies(dt) {
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const zb = zombies[i];
+    zb.atkCd -= dt; zb.chewCd -= dt; zb.flashT -= dt; zb.wob += dt*9;
+    if (zb.flashT <= 0 && zb.flashT > -1) {
+      for (const m of zb.rig.root.getChildMeshes()) if (m._fm) m.material.emissiveColor = C3.Black();
+      zb.flashT = -2;
+    }
+    const dx = state.x - zb.x, dz = state.z - zb.z, d = Math.hypot(dx, dz);
+    if (d > 1.0 && !state.dead) {
+      const hit = tryMove(zb, dx/d*zb.speed*dt, dz/d*zb.speed*dt);
+      if (hit && zb.chewCd <= 0) { zb.chewCd = 0.8; damageBlock(hit.x, hit.z, false); } // they chew through your forest
+    } else if (d <= 1.1 && zb.atkCd <= 0 && !state.dead) {
+      zb.atkCd = 0.9;
+      state.hp -= 8; state.hurtT = 0.4;
+      SFX.hurt();
+      if (state.hp <= 0) die();
+    }
+    // simple separation so they don't stack
+    for (const ob of zombies) {
+      if (ob === zb) continue;
+      const sx = zb.x - ob.x, sz = zb.z - ob.z, sd = Math.hypot(sx, sz);
+      if (sd > 0.001 && sd < 0.6) { zb.x += sx/sd*0.02; zb.z += sz/sd*0.02; }
+    }
+    zb.rig.root.position.x = zb.x; zb.rig.root.position.z = zb.z;
+    zb.rig.root.rotation.y = Math.atan2(dx, dz);
+    zb.rig.root.position.y = Math.abs(Math.sin(zb.wob)) * 0.05;
+    zb.rig.root.rotation.z = Math.sin(zb.wob) * 0.06;
+  }
+}
+
+function die() {
+  state.dead = true;
+  $('diedmsg').textContent = 'You survived ' + state.day + (state.day === 1 ? ' day' : ' days') + ' · ' + state.kills + ' bonks';
+  $('died').style.display = 'flex';
+}
+
+// ---------- main loop ----------
+let walkT = 0;
+state.swingT = 0;
+engine.runRenderLoop(() => {
+  const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+
+  if (!state.dead) {
+    updateCycle(dt);
+
+    // -- player movement --
+    let mx = 0, mz = 0;
+    if (keys['w'] || keys['arrowup']) mz -= 1;
+    if (keys['s'] || keys['arrowdown']) mz += 1;
+    if (keys['a'] || keys['arrowleft']) mx -= 1;
+    if (keys['d'] || keys['arrowright']) mx += 1;
+    if (pointerTarget) {
+      const px = pointerTarget.x - state.x, pz = pointerTarget.z - state.z, pd = Math.hypot(px, pz);
+      if (pd > 0.4) { mx = px/pd; mz = pz/pd; }
+    }
+    const ml = Math.hypot(mx, mz);
+    state.mineT -= dt;
+    if (ml > 0.01) {
+      const hit = tryMove(state, mx/ml*4.4*dt, mz/ml*4.4*dt);
+      player.root.rotation.y = Math.atan2(mx, mz);
+      walkT += dt*10;
+      if (hit && state.mineT <= 0 && cellAt(hit.x, hit.z) >= T.TREE) {
+        state.mineT = 0.35;
+        state.swingT = 0.22;
+        damageBlock(hit.x, hit.z, true);
+      }
+    } else walkT *= 0.8;
+    player.root.position.x = state.x; player.root.position.z = state.z;
+
+    // -- walk + swing animation --
+    const sw = Math.sin(walkT) * Math.min(ml*3, 1) * 0.65;
+    player.legL.rotation.x = sw; player.legR.rotation.x = -sw;
+    player.armL.rotation.x = -sw;
+    state.swingT = Math.max(0, state.swingT - dt);
+    player.armR.rotation.x = state.swingT > 0 ? -2.4 * Math.sin((0.22 - state.swingT)/0.22 * Math.PI) : sw;
+
+    playerAttack(dt);
+    updateZombies(dt);
+
+    // daytime regen, like camping by the fire
+    if (state.phase === 'day' && state.hurtT < -4) state.hp = Math.min(state.maxHp, state.hp + 2*dt);
+    state.hurtT -= dt;
+  }
+
+  // -- gems: spin, magnet, collect --
+  for (let i = gems.length - 1; i >= 0; i--) {
+    const g = gems[i];
+    g.t += dt;
+    g.mesh.rotation.y += dt*3;
+    g.mesh.position.y = 0.4 + Math.sin(g.t*4)*0.08;
+    const dx = state.x - g.x, dz = state.z - g.z, d = Math.hypot(dx, dz);
+    if (d < 3 && !state.dead) { g.x += dx/d*Math.min(8/d, 12)*dt; g.z += dz/d*Math.min(8/d, 12)*dt; }
+    g.mesh.position.x = g.x; g.mesh.position.z = g.z;
+    if (d < 0.5 && !state.dead) { g.mesh.dispose(); gems.splice(i, 1); state.gems++; hudDirty = true; SFX.gem(); }
+  }
+
+  // -- debris physics --
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    d.life -= dt; d.vy -= 9*dt;
+    d.mesh.position.addInPlace(new V3(d.vx*dt, d.vy*dt, d.vz*dt));
+    d.mesh.rotation.x += dt*6; d.mesh.rotation.y += dt*4;
+    d.mesh.scaling.setAll(Math.max(d.life, 0.01));
+    if (d.life <= 0 || d.mesh.position.y < -0.5) { d.mesh.material.dispose(); d.mesh.dispose(); debris.splice(i, 1); }
+  }
+
+  // -- block damage pulse --
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const p = pulses[i];
+    p.t -= dt;
+    setInstScale(p.inst, p.t <= 0 ? 1 : 1 + Math.sin(p.t/0.18*Math.PI)*0.16);
+    if (p.t <= 0) pulses.splice(i, 1);
+  }
+
+  // -- camera follow --
+  const want = new V3(state.x, 11.5, state.z + 7.8);
+  camera.position = V3.Lerp(camera.position, want, 1 - Math.exp(-8*dt));
+  camera.setTarget(new V3(state.x, 0.6, state.z));
+
+  // -- hurt vignette --
+  $('vignette').style.opacity = clamp(state.hurtT * 2, 0, 0.85);
+
+  updateHUD();
+  scene.render();
+});
+</script>
+</body>
+</html>

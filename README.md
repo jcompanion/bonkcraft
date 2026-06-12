@@ -4,6 +4,11 @@ A Minecraft × Vampire Survivors mashup with a tower-defense twist, built in Pha
 All art is generated procedurally in code — no asset files, nothing to download
 (Phaser itself loads from a CDN, so you need internet the first time).
 
+> **🧊 3D prototype:** a Babylon.js proof of concept lives in [`3d/`](3d/) — same
+> zero-build, CDN-loaded setup. Run the server below and open
+> `http://localhost:8000/3d/`. It has the terrain, day/night cycle, mining and
+> zombie nights in real 3D; it's a feel test, not the full game.
+
 ## Run it
 
 Easiest (recommended):
