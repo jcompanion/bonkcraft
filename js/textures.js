@@ -235,8 +235,14 @@ function makeTileset(scene) {
 }
 
 // ---------- characters ----------
-function makeCharacters(scene) {
-  // player (blocky Steve-ish)
+
+// player (blocky Steve-ish) — colors come from SETTINGS.avatar so the
+// look can be customized in settings and rebuilt live
+function makePlayerTexture(scene) {
+  if (scene.textures.exists('player')) scene.textures.remove('player');
+  const av = SETTINGS.avatar;
+  const shade = (hex, f) => '#' + [1, 3, 5].map(i =>
+    Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * f)).toString(16).padStart(2, '0')).join('');
   pixelTex(scene, 'player', [
     '..hhhhhh..',
     '.hhhhhhhh.',
@@ -252,7 +258,12 @@ function makeCharacters(scene) {
     '.ppp..ppp.',
     '.ppp..ppp.',
     '.gg....gg.',
-  ], { h: '#5d3a1e', s: '#e8b08a', e: '#ffffff', S: '#3a55c8', m: '#c08060', t: '#2bb5a8', p: '#3a3f8c', g: '#444a55' });
+  ], { h: av.hair, s: av.skin, e: '#ffffff', S: '#3a55c8', m: shade(av.skin, 0.8),
+       t: av.shirt, p: av.pants, g: '#444a55' });
+}
+
+function makeCharacters(scene) {
+  makePlayerTexture(scene);
 
   pixelTex(scene, 'zombie', [
     '..hhhhhh..',

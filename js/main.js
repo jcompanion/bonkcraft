@@ -56,6 +56,10 @@ class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.invulnT = 0;
     this.playerGlow = this.add.image(cx, cy, 'glow').setDepth(11).setScale(1.6).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    this.nameTag = this.add.text(cx, cy - 20, SETTINGS.avatar.name, {
+      fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#ffffff',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setDepth(6).setVisible(!!SETTINGS.avatar.name);
 
     this.physics.world.setBounds(0, 0, MAP_W * TILE, GRID_H * TILE);
     this.cameras.main.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
@@ -453,6 +457,7 @@ class GameScene extends Phaser.Scene {
     }
     this.playerGlow.setPosition(p.x, p.y);
     this.playerGlow.setAlpha(st.darkness * 0.55);
+    this.nameTag.setPosition(p.x, p.y - 20);
   }
 
   // auto-mine the nearest block you're standing against.

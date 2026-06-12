@@ -2,6 +2,10 @@
 const SETTINGS = Object.assign(
   { volume: 1, muted: false, shake: true, floatText: true, minimap: true, log: true },
   JSON.parse(localStorage.getItem('blockbonk_settings') || '{}'));
+// avatar merged separately so saved settings from older versions pick up new fields
+SETTINGS.avatar = Object.assign(
+  { name: '', hair: '#5d3a1e', skin: '#e8b08a', shirt: '#2bb5a8', pants: '#3a3f8c' },
+  SETTINGS.avatar || {});
 function saveSettings() {
   try { localStorage.setItem('blockbonk_settings', JSON.stringify(SETTINGS)); } catch (e) {}
 }

@@ -22,6 +22,8 @@ function openSettings(scene) {
   $('set-log').checked = !!SETTINGS.log;
   const save = readSave();
   $('set-saveinfo').textContent = save ? `— day ${save.state.day}, saved ${savedAgo(save.savedAt)}` : '— no save yet';
+  $('set-name').value = SETTINGS.avatar.name;
+  renderAvatarUI(scene);
   setModal('modal-settings', true);
   scene.setPaused(true);
 }
@@ -29,6 +31,39 @@ function openSettings(scene) {
 function closeSettings(scene) {
   setModal('modal-settings', false);
   scene.setPaused(false);
+}
+
+// ---------- avatar customization ----------
+const AVATAR_CHOICES = {
+  hair:  ['#5d3a1e', '#1d1d22', '#e8c84a', '#b8482a', '#8a8a92', '#7a3aa8'],
+  skin:  ['#e8b08a', '#c98a5e', '#8a5a3a', '#5d3a24', '#f0d8b8', '#9ae06a'],
+  shirt: ['#2bb5a8', '#c8392e', '#3a55c8', '#2ba51f', '#e8a82a', '#8a3aa8'],
+  pants: ['#3a3f8c', '#2a2a30', '#6a4a2a', '#3a6a2a', '#8a2a3a', '#54545e'],
+};
+
+function renderAvatarUI(scene) {
+  for (const part of Object.keys(AVATAR_CHOICES)) {
+    const el = $('sw-' + part);
+    el.innerHTML = '';
+    for (const col of AVATAR_CHOICES[part]) {
+      const b = document.createElement('div');
+      b.className = 'swb' + (SETTINGS.avatar[part] === col ? ' sel' : '');
+      b.style.background = col;
+      b.onclick = () => {
+        SETTINGS.avatar[part] = col;
+        saveSettings();
+        refreshAvatar(scene);
+        renderAvatarUI(scene);
+        SFX.pickup();
+      };
+      el.appendChild(b);
+    }
+  }
+}
+
+function refreshAvatar(scene) {
+  makePlayerTexture(scene);
+  scene.player.setTexture('player');
 }
 
 function initSettingsUI() {
@@ -55,6 +90,21 @@ function initSettingsUI() {
   $('import-file').onchange = e => {
     if (e.target.files && e.target.files[0]) importSaveFile(window.gameScene, e.target.files[0]);
     e.target.value = '';
+  };
+  // Phaser captures WASD/arrows globally — release the keyboard while naming yourself
+  $('set-name').addEventListener('focus', () => {
+    const s = window.gameScene;
+    if (s) { s.input.keyboard.disableGlobalCapture(); s.input.keyboard.enabled = false; }
+  });
+  $('set-name').addEventListener('blur', () => {
+    const s = window.gameScene;
+    if (s) { s.input.keyboard.enableGlobalCapture(); s.input.keyboard.enabled = true; }
+  });
+  $('set-name').oninput = e => {
+    SETTINGS.avatar.name = e.target.value.toUpperCase().slice(0, 12);
+    saveSettings();
+    const s = window.gameScene;
+    if (s && s.nameTag) s.nameTag.setText(SETTINGS.avatar.name).setVisible(!!SETTINGS.avatar.name);
   };
 }
 
