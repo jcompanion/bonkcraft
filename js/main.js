@@ -165,6 +165,7 @@ class GameScene extends Phaser.Scene {
         this.tryDismantle(ptr);
         return;
       }
+      if (TOUCH_INPUT.dismantle) { this.tryDismantle(ptr); return; } // touch: 🔨 mode replaces right-click
       if (this.state.bpCapture) { this.bpDragStart = { x: ptr.worldX, y: ptr.worldY }; return; }
       if (this.state.placingBp) { stampBlueprint(this); return; }
       if (this.state.placing) {
@@ -363,7 +364,10 @@ class GameScene extends Phaser.Scene {
     if (tile && isWallTile(tile.index) &&
         Phaser.Math.Distance.Between(p.x, p.y, tile.getCenterX(), tile.getCenterY()) < 90) {
       const idx = destroyBlockTile(this, tx, ty);
-      if (idx >= 0) dropResources(this, tile.getCenterX(), tile.getCenterY(), BLOCK_INFO[idx].drops);
+      if (idx >= 0) {
+        dropResources(this, tile.getCenterX(), tile.getCenterY(), BLOCK_INFO[idx].drops);
+        logRes(this, 'you_salvage', '🔨 you salvaged', BLOCK_INFO[idx].drops);
+      }
       queueSave(this);
       return;
     }
@@ -373,6 +377,7 @@ class GameScene extends Phaser.Scene {
         Phaser.Math.Distance.Between(p.x, p.y, g2.getCenterX(), g2.getCenterY()) < 90) {
       this.groundLayer.putTileAt(T.GRASS, tx, ty);
       dropResources(this, g2.getCenterX(), g2.getCenterY(), { stone: 1 });
+      logRes(this, 'you_salvage', '🔨 you salvaged', { stone: 1 });
       queueSave(this);
     }
   }
@@ -429,10 +434,11 @@ class GameScene extends Phaser.Scene {
     const k = this.keys, p = this.player, st = this.state;
     let vx = (k.A.isDown || k.LEFT.isDown ? -1 : 0) + (k.D.isDown || k.RIGHT.isDown ? 1 : 0);
     let vy = (k.W.isDown || k.UP.isDown ? -1 : 0) + (k.S.isDown || k.DOWN.isDown ? 1 : 0);
+    if (vx && vy) { vx *= 0.7071; vy *= 0.7071; }
+    if (!vx && !vy && TOUCH_INPUT.active) { vx = TOUCH_INPUT.x; vy = TOUCH_INPUT.y; } // virtual joystick
     const gt = this.groundLayer.getTileAt(Math.floor(p.x / TILE), Math.floor(p.y / TILE));
     const floorMul = gt && gt.index === T.FLOOR ? 1.3 : 1;
     const speed = 170 * (1 + 0.07 * (st.passives.boots || 0)) * (1 + 0.03 * (st.prestige || 0)) * floorMul;
-    if (vx && vy) { vx *= 0.7071; vy *= 0.7071; }
     p.body.setVelocity(vx * speed, vy * speed);
     if (vx) p.setFlipX(vx < 0);
 
@@ -500,6 +506,7 @@ class GameScene extends Phaser.Scene {
       const idx = destroyBlockTile(this, bestTile.x, bestTile.y);
       if (idx >= 0) {
         dropResources(this, cxp, cyp, BLOCK_INFO[idx].drops);
+        logRes(this, 'you_mine', '⛏ you mined', BLOCK_INFO[idx].drops);
         if (idx === T.TREE && Math.random() < APPLE_CHANCE) dropApple(this, cxp, cyp);
         gainXP(this, BLOCK_INFO[idx].xp || 0);
         gainSkill(this, 'mining', (BLOCK_INFO[idx].xp || 1) * 2);
@@ -636,9 +643,10 @@ class GameScene extends Phaser.Scene {
   // shared collection: player pickups make noise, critter deliveries are silent
   collectPickup(s, byPet) {
     if (!s.active) return;
-    if (byPet && (s.kind === 'gem' || s.kind === 'coin')) {
+    if (s.kind === 'gem' || s.kind === 'coin') {
       // only kill-loot here — mined resources are already credited to whoever dug them
-      logRes(this, 'crew', '🐾 crew looted', s.kind === 'gem' ? { xp: s.value } : { coins: s.value });
+      logRes(this, byPet ? 'crew' : 'you_loot', byPet ? '🐾 crew looted' : '💰 you looted',
+             s.kind === 'gem' ? { xp: s.value } : { coins: s.value });
     }
     if (s.kind === 'gem') { gainXP(this, s.value); if (!byPet) SFX.gem(); }
     else if (s.kind === 'coin') { this.state.coins += s.value; if (!byPet) SFX.pickup(); }
@@ -1091,7 +1099,10 @@ function setupIdleMode() {
   } catch (e) { /* no worker support — idle mode unavailable */ }
   document.addEventListener('visibilitychange', () => {
     const s = window.gameScene;
-    if (s && s.state && !document.hidden) endIdle(s);
+    if (!s || !s.state) return;
+    if (!document.hidden) endIdle(s);
+    // mobile browsers rarely fire beforeunload — bank the save when backgrounded
+    else if (!s.state.gameOver) saveGame(s);
   });
 }
 setupIdleMode();

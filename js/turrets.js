@@ -3,6 +3,7 @@
 function enterPlacement(scene, id) {
   const st = scene.state;
   if (!st.stock[id]) return;
+  touchDismantleOff(); // placing and dismantling are exclusive modes
   st.placing = id;
   if (!scene.ghost) {
     scene.ghost = scene.add.image(0, 0, 'px').setDepth(30).setAlpha(0.55);

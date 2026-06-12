@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <title>BlockBonk — Survive the Night</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <link rel="icon" href="data:,">
 <style>
   @font-face { font-family: 'PixelFallback'; src: local('Courier New'); }
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-  html, body { width: 100%; height: 100%; background: #0b0e14; overflow: hidden; }
-  body { font-family: 'Press Start 2P', 'PixelFallback', monospace; color: #e8e8e8; }
-  #game-container { position: absolute; inset: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  html, body { width: 100%; height: 100%; background: #0b0e14; overflow: hidden; overscroll-behavior: none; }
+  body { font-family: 'Press Start 2P', 'PixelFallback', monospace; color: #e8e8e8; -webkit-tap-highlight-color: transparent; }
+  #game-container { position: absolute; inset: 0; touch-action: none; -webkit-touch-callout: none; }
   #game-container canvas { display: block; }
 
   /* ---------- overlay UI ---------- */
@@ -141,12 +141,70 @@
   .center-box button:hover { background: #36c926; }
   .center-box button.alt { background: #3a3f4c; }
   .center-box button.alt:hover { background: #4a5163; }
+
+  /* ---------- touch controls (shown only on coarse-pointer devices) ---------- */
+  #touch-stick-zone { display: none; position: absolute; left: 0; bottom: 0; width: 45%; height: 55%; z-index: 5; touch-action: none; }
+  body.touch #touch-stick-zone { display: block; }
+  #stick-base, #stick-nub { position: fixed; transform: translate(-50%, -50%); border-radius: 50%; display: none; pointer-events: none; z-index: 6; }
+  #stick-base { width: 110px; height: 110px; border: 3px solid rgba(255,255,255,.22); background: rgba(18,22,30,.3); }
+  #stick-nub { width: 46px; height: 46px; background: rgba(255,217,94,.45); border: 2px solid rgba(255,255,255,.4); }
+  #touch-buttons { display: none; position: absolute; right: calc(10px + env(safe-area-inset-right)); top: 50%; transform: translateY(-50%); flex-direction: column; gap: 10px; pointer-events: auto; z-index: 11; }
+  body.touch #touch-buttons { display: flex; }
+  .tbtn { width: 48px; height: 48px; border-radius: 50%; background: rgba(18,22,30,.85); border: 2px solid #3a3f4c; color: #e8e8e8; font-size: 19px; font-family: inherit; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
+  .tbtn:active { background: #2a3142; }
+  .tbtn.on { border-color: #ffd95e; box-shadow: 0 0 8px rgba(255,217,94,.5); }
+  body.touch #buffs { right: 76px; }
+  body.touch .hslot { width: 44px; height: 44px; }
+  body.touch #hud-bottom { bottom: calc(8px + env(safe-area-inset-bottom)); }
+  body.touch #hint { display: none; }
+  .touch-help { display: none; }
+  body.touch .kb-help { display: none; }
+  body.touch .touch-help { display: inline; }
+
+  /* ---------- small screens (phones) ---------- */
+  @media (max-width: 760px) {
+    #hud-bars { width: 150px; top: 8px; left: 8px; }
+    #level-tag { font-size: 8px; }
+    .bar-wrap { height: 14px; }
+    .bar-text { font-size: 7px; line-height: 12px; }
+    #party { max-width: 170px; }
+    .pet-chip { font-size: 9px; padding: 3px 5px; }
+    #hud-clock { top: 8px; padding: 5px 10px; }
+    #clock-day { font-size: 9px; }
+    #clock-time { font-size: 8px; margin-top: 4px; }
+    #hud-res { top: 8px; right: 8px; font-size: 8px; line-height: 15px; padding: 5px 7px; }
+    #minimap { width: 104px; top: 138px; right: 8px; }
+    #activity-log { left: 8px; top: 132px; bottom: auto; width: 180px; max-height: 100px; font-size: 7px; line-height: 12px; }
+    #activity-log .le { padding: 2px 5px; }
+    #buffs { bottom: auto; top: 252px; right: 8px; font-size: 8px; line-height: 16px; }
+    #hint { display: none; }
+    #banner { font-size: 14px; line-height: 22px; width: 92vw; }
+    .wslot { width: 26px; height: 26px; font-size: 12px; }
+    .wslot .lvl { font-size: 7px; }
+    .modal-box { max-width: 96vw; padding: 14px; max-height: 88vh; }
+    .modal h2 { font-size: 13px; }
+    #craft-list { grid-template-columns: 1fr; }
+    #levelup-cards { flex-direction: column; gap: 8px; width: 100%; }
+    .card { width: 100%; display: grid; grid-template-columns: 44px 1fr; column-gap: 10px; align-items: center; text-align: left; padding: 10px; }
+    .card .icon { grid-row: 1 / 4; font-size: 26px; margin: 0; text-align: center; }
+    .card .name { margin-bottom: 4px; }
+    .card .tag { margin-bottom: 4px; }
+    .center-box { padding: 18px 14px; }
+    .center-box .big { font-size: 15px; }
+    .center-box .stats { font-size: 8px; line-height: 16px; }
+    .center-box button { font-size: 9px; padding: 10px 14px; }
+  }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
 <div id="game-container"></div>
+
+<div id="touch-stick-zone">
+  <div id="stick-base"></div>
+  <div id="stick-nub"></div>
+</div>
 
 <div id="ui">
   <div id="hud-bars">
@@ -182,6 +240,14 @@
     <div id="hotbar"></div>
   </div>
 
+  <div id="touch-buttons">
+    <button class="tbtn" id="tb-pause" title="Pause">⏸</button>
+    <button class="tbtn" id="tb-craft" title="Crafting">⚒</button>
+    <button class="tbtn" id="tb-pets" title="Critters">🐾</button>
+    <button class="tbtn" id="tb-sleep" title="Sleep">🛏</button>
+    <button class="tbtn" id="tb-dig" title="Dismantle">🔨</button>
+  </div>
+
   <div id="banner"></div>
 
   <!-- Level up -->
@@ -197,7 +263,7 @@
     <div class="modal-box panel" style="width:700px">
       <h2>⛏ CRAFTING</h2>
       <div id="craft-list"></div>
-      <div class="close-hint">[C] or [ESC] to close · crafted turrets &amp; walls go to your hotbar</div>
+      <div class="close-hint">[C] / [ESC] / tap outside to close · crafted turrets &amp; walls go to your hotbar</div>
     </div>
   </div>
 
@@ -206,6 +272,7 @@
     <div class="center-box panel">
       <div class="big" style="color:#ffd95e">PAUSED</div>
       <div class="stats">
+        <span class="kb-help">
         WASD / arrows — move<br>
         C — crafting menu<br>
         1-8 — select structure · click to place<br>
@@ -213,7 +280,15 @@
         G — capture a blueprint of your fort<br>
         N — toggle minimap<br>
         right-click / ESC — cancel placement<br>
-        M — mute &nbsp; ESC — pause<br><br>
+        M — mute &nbsp; ESC — pause<br>
+        </span>
+        <span class="touch-help">
+        left thumb — move (walk into blocks to mine)<br>
+        tap a hotbar slot, then tap the ground to build<br>
+        ⚒ craft &nbsp; 🐾 critters &nbsp; 🛏 sleep at night<br>
+        🔨 dismantle mode — tap your walls/turrets<br>
+        </span>
+        <br>
         <span style="color:#7ef76a">autosaves every dawn</span>
       </div>
       <button onclick="gameScene.togglePause()">RESUME</button>
@@ -242,7 +317,7 @@
       <div id="party-list"></div>
       <h3 id="box-head">IN THE BOX</h3>
       <div id="box-list"></div>
-      <div class="close-hint">[B] or [ESC] to close · boxed critters rest up to full health</div>
+      <div class="close-hint">[B] / [ESC] / tap outside to close · boxed critters rest up to full health</div>
     </div>
   </div>
 
@@ -284,7 +359,7 @@
 (function () {
   var v = Date.now();
   var files = ['sfx', 'data', 'textures', 'world', 'weapons', 'enemies', 'turrets',
-               'areas', 'blueprint', 'pets', 'save', 'ui', 'main'];
+               'areas', 'blueprint', 'pets', 'save', 'ui', 'touch', 'main'];
   for (var i = 0; i < files.length; i++) {
     document.write('<scr' + 'ipt src="js/' + files[i] + '.js?v=' + v + '"></scr' + 'ipt>');
   }

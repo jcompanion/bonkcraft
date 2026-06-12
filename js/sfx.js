@@ -66,6 +66,7 @@ const SFX = (() => {
   }
 
   return {
+    unlock() { try { ac(); } catch (e) {} }, // call from a user gesture — iOS gate
     toggleMute() { muted = !muted; SETTINGS.muted = muted; saveSettings(); return muted; },
     setMuted(m) { muted = !!m; SETTINGS.muted = muted; saveSettings(); },
     get muted() { return muted; },
