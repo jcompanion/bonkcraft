@@ -18,6 +18,16 @@ function initTouchControls() {
   if (!IS_TOUCH) return;
   document.body.classList.add('touch');
 
+  // first run on a touch device: start with a minimal HUD — everything
+  // lives in the pause screen and can be re-enabled in settings
+  if (!SETTINGS.touchDefaults) {
+    SETTINGS.touchDefaults = true;
+    SETTINGS.minimap = false;
+    SETTINGS.log = false;
+    SETTINGS.resPanel = false;
+    saveSettings();
+  }
+
   // iOS keeps WebAudio suspended until a user gesture — wake it on first touch
   document.addEventListener('touchstart', () => SFX.unlock(), { once: true, passive: true });
 

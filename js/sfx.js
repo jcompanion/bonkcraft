@@ -1,6 +1,6 @@
 // player settings — persisted separately from saves
 const SETTINGS = Object.assign(
-  { volume: 1, muted: false, shake: true, floatText: true, minimap: true, log: true },
+  { volume: 1, muted: false, shake: true, floatText: true, minimap: true, log: true, resPanel: true },
   JSON.parse(localStorage.getItem('blockbonk_settings') || '{}'));
 // avatar merged separately so saved settings from older versions pick up new fields
 SETTINGS.avatar = Object.assign(

@@ -236,6 +236,7 @@ class GameScene extends Phaser.Scene {
     cam.shake = (...a) => (SETTINGS.shake ? realShake(...a) : cam);
     $('minimap').style.display = SETTINGS.minimap ? '' : 'none';
     $('activity-log').style.display = SETTINGS.log ? '' : 'none';
+    $('hud-res').style.display = SETTINGS.resPanel ? '' : 'none';
     $('activity-log').innerHTML = '';
     initSettingsUI();
 
@@ -340,6 +341,7 @@ class GameScene extends Phaser.Scene {
 
   togglePause() {
     const open = $('modal-pause').classList.contains('open');
+    if (!open) updatePauseStats(this);
     setModal('modal-pause', !open);
     this.setPaused(!open);
   }

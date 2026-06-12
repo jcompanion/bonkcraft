@@ -20,6 +20,7 @@ function openSettings(scene) {
   $('set-float').checked = !!SETTINGS.floatText;
   $('set-minimap').checked = !!SETTINGS.minimap;
   $('set-log').checked = !!SETTINGS.log;
+  $('set-res').checked = !!SETTINGS.resPanel;
   const save = readSave();
   $('set-saveinfo').textContent = save ? `— day ${save.state.day}, saved ${savedAgo(save.savedAt)}` : '— no save yet';
   $('set-name').value = SETTINGS.avatar.name;
@@ -87,6 +88,11 @@ function initSettingsUI() {
     saveSettings();
     $('activity-log').style.display = SETTINGS.log ? '' : 'none';
   };
+  $('set-res').onchange = e => {
+    SETTINGS.resPanel = e.target.checked;
+    saveSettings();
+    $('hud-res').style.display = SETTINGS.resPanel ? '' : 'none';
+  };
   $('import-file').onchange = e => {
     if (e.target.files && e.target.files[0]) importSaveFile(window.gameScene, e.target.files[0]);
     e.target.value = '';
@@ -106,6 +112,19 @@ function initSettingsUI() {
     const s = window.gameScene;
     if (s && s.nameTag) s.nameTag.setText(SETTINGS.avatar.name).setVisible(!!SETTINGS.avatar.name);
   };
+}
+
+// full inventory + skills snapshot for the pause screen (the HUD panels can
+// be hidden — especially on phones — so pause is where you take stock)
+function updatePauseStats(scene) {
+  const st = scene.state;
+  const sk = k => (st.skills[k] || { lvl: 1 }).lvl;
+  $('pause-stats').innerHTML =
+    `<span style="color:#ffd95e">DAY ${st.day}</span> · LV ${st.level}` +
+    ((st.prestige || 0) ? ` · ✨${st.prestige}` : '') + ` · ${st.kills} kills<br>` +
+    `wood ${st.res.wood} · stone ${st.res.stone} · iron ${st.res.iron}<br>` +
+    `gold ${st.res.gold} · 💎 ${st.res.diamond} · 🪙 ${st.coins}<br>` +
+    `⛏${sk('mining')} 🎣${sk('fishing')} ⚔${sk('combat')} 🔨${sk('building')} ⚒${sk('forging')} 🐾${sk('taming')}`;
 }
 
 // "NEW WORLD" on the continue-prompt: keep this fresh world and make it the save
