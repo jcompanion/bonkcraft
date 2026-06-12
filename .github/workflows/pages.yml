@@ -1,0 +1,33 @@
+name: Deploy to GitHub Pages
+
+# Publishes the repo as a static site: the 2D game at / and the 3D
+# proof of concept at /3d/. One-time setup: in the repo's Settings →
+# Pages, set Source to "GitHub Actions".
+on:
+  push:
+    branches: [main, claude/friendly-rubin-y6lqyt]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
